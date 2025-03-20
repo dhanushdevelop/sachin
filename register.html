@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Register</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="box">
+        <h1>Register Here</h1>
+        <form id="registerForm">
+            <p>Username</p>
+            <input type="text" id="uname" placeholder="Enter Username" required>
+            <p>Password</p>
+            <input type="password" id="upswd" placeholder="Enter Password" required>
+            <input type="submit" value="Register">
+            <br><br>
+            <a href="index.html">Already have an account? Login here</a>
+        </form>
+    </div>
+    <script>
+    document.getElementById("registerForm").addEventListener("submit", async function(event) {
+        event.preventDefault();
+        
+        const uname = document.getElementById("uname").value;
+        const upswd = document.getElementById("upswd").value;
+
+        const response = await fetch("http://localhost:3000/register", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ uname, upswd })
+        });
+
+        const result = await response.json();
+        alert(result.message);
+        if (result.success) {
+            window.location.href = "index.html"; // Redirect to login page after successful registration
+        }
+    });
+    </script>
+</body>
+</html>
