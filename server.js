@@ -9,9 +9,9 @@ const path = require('path');
 const fs = require('fs');
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
-mongoose.connect('mongodb+srv://dhanushua11:damUvSoBAPYPgeuW@cluster0.3ynp0.mongodb.net/userDB?retryWrites=true&w=majority')
+mongoose.connect(process.env.MONGODB_URI || 'mongodb+srv://dhanushua11:damUvSoBAPYPgeuW@cluster0.3ynp0.mongodb.net/userDB')
     .then(() => console.log('Connected to MongoDB Atlas'))
     .catch(err => console.error('MongoDB Atlas connection error:', err));
 
@@ -58,10 +58,7 @@ const upload = multer({ storage });
 // Admin login route
 app.post('/admin/login', async (req, res) => {
     const { username, password } = req.body;
-
-    // Replace with your actual admin credentials
     const adminUser = { username: "sachin", password: "sachincse" };
-
     if (username === adminUser.username && password === adminUser.password) {
         req.session.admin = true;
         res.json({ success: true, message: "Admin login successful!" });
@@ -87,7 +84,6 @@ app.use('/admin', (req, res, next) => {
 
 app.post('/login', async (req, res) => {
     const { uname, upswd } = req.body;
-    
     try {
         const user = await User.findOne({ username: uname });
         if (user && await bcrypt.compare(upswd, user.password)) {
@@ -103,13 +99,11 @@ app.post('/login', async (req, res) => {
 
 app.post('/register', async (req, res) => {
     const { uname, upswd } = req.body;
-    
     try {
         const existingUser = await User.findOne({ username: uname });
         if (existingUser) {
             return res.json({ success: false, message: 'Username already exists' });
         }
-
         const hashedPassword = await bcrypt.hash(upswd, 10);
         const newUser = new User({ username: uname, password: hashedPassword });
         await newUser.save();
@@ -143,13 +137,9 @@ app.delete('/admin/orders/:id', async (req, res) => {
         if (!order) {
             return res.status(404).json({ success: false, message: 'Order not found' });
         }
-        
         fs.unlink(order.filePath, (err) => {
-            if (err) {
-                console.error('Error deleting file:', err);
-            }
+            if (err) console.error('Error deleting file:', err);
         });
-        
         await Order.findByIdAndDelete(req.params.id);
         res.json({ success: true, message: 'Order deleted successfully' });
     } catch (error) {
