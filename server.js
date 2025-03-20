@@ -6,22 +6,20 @@ const session = require('express-session');
 const cors = require('cors');
 const multer = require('multer');
 const path = require('path');
+const fs = require('fs');
 
 const app = express();
 const PORT = 3000;
 
-
 mongoose.connect('mongodb+srv://dhanushua11:damUvSoBAPYPgeuW@cluster0.3ynp0.mongodb.net/userDB?retryWrites=true&w=majority')
     .then(() => console.log('Connected to MongoDB Atlas'))
     .catch(err => console.error('MongoDB Atlas connection error:', err));
-
 
 const userSchema = new mongoose.Schema({
     username: String,
     password: String
 });
 const User = mongoose.model('User', userSchema);
-
 
 const orderSchema = new mongoose.Schema({
     name: String,
@@ -44,6 +42,10 @@ app.use(session({
     saveUninitialized: true
 }));
 
+if (!fs.existsSync('./uploads')) {
+    fs.mkdirSync('./uploads');
+    console.log('Uploads folder created');
+}
 
 const storage = multer.diskStorage({
     destination: './uploads/',
@@ -53,6 +55,35 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
+// Admin login route
+app.post('/admin/login', async (req, res) => {
+    const { username, password } = req.body;
+
+    // Replace with your actual admin credentials
+    const adminUser = { username: "sachin", password: "sachincse" };
+
+    if (username === adminUser.username && password === adminUser.password) {
+        req.session.admin = true;
+        res.json({ success: true, message: "Admin login successful!" });
+    } else {
+        res.json({ success: false, message: "Invalid admin credentials" });
+    }
+});
+
+// Admin logout route
+app.get('/admin/logout', (req, res) => {
+    req.session.destroy(() => {
+        res.json({ success: true, message: "Logged out successfully" });
+    });
+});
+
+// Middleware to protect admin routes
+app.use('/admin', (req, res, next) => {
+    if (!req.session.admin) {
+        return res.status(403).json({ success: false, message: "Unauthorized access" });
+    }
+    next();
+});
 
 app.post('/login', async (req, res) => {
     const { uname, upswd } = req.body;
@@ -69,7 +100,6 @@ app.post('/login', async (req, res) => {
         res.status(500).json({ success: false, message: 'Server error' });
     }
 });
-
 
 app.post('/register', async (req, res) => {
     const { uname, upswd } = req.body;
@@ -89,7 +119,6 @@ app.post('/register', async (req, res) => {
     }
 });
 
-
 app.post('/logout', (req, res) => {
     req.session.destroy(err => {
         if (err) {
@@ -99,47 +128,37 @@ app.post('/logout', (req, res) => {
     });
 });
 
-
-app.post('/upload', upload.single('pdfFile'), async (req, res) => {
+app.get('/admin/orders', async (req, res) => {
     try {
-        console.log('Received upload request');
-        console.log('Request body:', req.body);
-        console.log('Uploaded file:', req.file);
-
-        if (!req.file) {
-            console.error('No file uploaded');
-            return res.status(400).json({ success: false, message: 'No file uploaded' });
-        }
-
-        const { name, address, phone, altPhone, paymentMethod, numPages, numCopies } = req.body;
-
-        const newOrder = new Order({
-            name,
-            address,
-            phone,
-            altPhone,
-            paymentMethod,
-            filePath: req.file.path,
-            numPages,
-            numCopies
-        });
-
-        await newOrder.save();
-        console.log('File uploaded successfully:', req.file.path);
-
-        res.json({ success: true, message: 'File uploaded successfully', filePath: req.file.path });
-
+        const orders = await Order.find();
+        res.json(orders);
     } catch (error) {
-        console.error('Upload Error:', error);
+        res.status(500).json({ message: 'Server error', error: error.message });
+    }
+});
+
+app.delete('/admin/orders/:id', async (req, res) => {
+    try {
+        const order = await Order.findById(req.params.id);
+        if (!order) {
+            return res.status(404).json({ success: false, message: 'Order not found' });
+        }
+        
+        fs.unlink(order.filePath, (err) => {
+            if (err) {
+                console.error('Error deleting file:', err);
+            }
+        });
+        
+        await Order.findByIdAndDelete(req.params.id);
+        res.json({ success: true, message: 'Order deleted successfully' });
+    } catch (error) {
         res.status(500).json({ success: false, message: 'Server error', error: error.message });
     }
 });
 
-
-
 app.use(express.static(__dirname + '/public'));
 app.use('/uploads', express.static('uploads'));
-
 
 app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
