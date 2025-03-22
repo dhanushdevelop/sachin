@@ -1,155 +1,192 @@
-const express = require('express');
-const mongoose = require('mongoose');
-const bcrypt = require('bcryptjs');
-const bodyParser = require('body-parser');
-const session = require('express-session');
-const cors = require('cors');
-const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
+const express = require("express");
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
+const mongoose = require("mongoose");
+const multer = require("multer");
+const cors = require("cors");
+const path = require("path");
+const fs = require("fs");
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+app.use(express.json());
+app.use(cors());
+app.use(express.static("public")); // Serve frontend
 
-mongoose.connect(process.env.MONGODB_URI || 'mongodb+srv://dhanushua11:damUvSoBAPYPgeuW@cluster0.3ynp0.mongodb.net/userDB')
-    .then(() => console.log('Connected to MongoDB Atlas'))
-    .catch(err => console.error('MongoDB Atlas connection error:', err));
+// MongoDB Connection
+const MONGO_URI = "mongodb+srv://dhanushua11:damUvSoBAPYPgeuW@cluster0.3ynp0.mongodb.net/userDB?retryWrites=true&w=majority";
+mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
+    .then(() => console.log("✅ MongoDB Connected"))
+    .catch(err => console.error("❌ MongoDB Connection Error:", err));
 
+// User Schema & Model
 const userSchema = new mongoose.Schema({
-    username: String,
-    password: String
+    uname: String,
+    upswd: String
 });
-const User = mongoose.model('User', userSchema);
+const User = mongoose.model("User", userSchema);
 
+const JWT_SECRET = "your_secret_key";
+
+// Order Schema & Model
 const orderSchema = new mongoose.Schema({
     name: String,
     address: String,
     phone: String,
     altPhone: String,
     paymentMethod: String,
-    filePath: String,
     numPages: Number,
     numCopies: Number,
-    uploadedAt: { type: Date, default: Date.now }
+    printType: String,
+    totalPrice: Number,
+    pdfPath: String,
+    createdAt: { type: Date, default: Date.now }
 });
-const Order = mongoose.model('Order', orderSchema);
+const Order = mongoose.model("Order", orderSchema);
 
-app.use(bodyParser.json());
-app.use(cors());
-app.use(session({
-    secret: 'secretkey',
-    resave: false,
-    saveUninitialized: true
-}));
-
-if (!fs.existsSync('./uploads')) {
-    fs.mkdirSync('./uploads');
-    console.log('Uploads folder created');
-}
-
+// Configure Multer for PDF Uploads
 const storage = multer.diskStorage({
-    destination: './uploads/',
+    destination: (req, file, cb) => {
+        const uploadDir = path.join(__dirname, "public/uploads/");
+        if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+        cb(null, uploadDir);
+    },
     filename: (req, file, cb) => {
-        cb(null, Date.now() + path.extname(file.originalname));
+        const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+        cb(null, uniqueSuffix + path.extname(file.originalname));
     }
 });
 const upload = multer({ storage });
 
-// Admin login route
-app.post('/admin/login', async (req, res) => {
-    const { username, password } = req.body;
-    const adminUser = { username: "sachin", password: "sachincse" };
-    if (username === adminUser.username && password === adminUser.password) {
-        req.session.admin = true;
-        res.json({ success: true, message: "Admin login successful!" });
+// Serve dynamic HTML pages based on print type
+app.get("/order", (req, res) => {
+    const printType = req.query.printType;
+    if (printType === "double") {
+        res.sendFile(path.join(__dirname, "public/doubleside2pages.html"));
     } else {
-        res.json({ success: false, message: "Invalid admin credentials" });
+        res.sendFile(path.join(__dirname, "public/singlerupees1.5.html"));
     }
 });
 
-// Admin logout route
-app.get('/admin/logout', (req, res) => {
-    req.session.destroy(() => {
-        res.json({ success: true, message: "Logged out successfully" });
-    });
-});
-
-// Middleware to protect admin routes
-app.use('/admin', (req, res, next) => {
-    if (!req.session.admin) {
-        return res.status(403).json({ success: false, message: "Unauthorized access" });
-    }
-    next();
-});
-
-app.post('/login', async (req, res) => {
-    const { uname, upswd } = req.body;
+// Upload Order
+app.post("/upload", upload.single("pdfFile"), async (req, res) => {
     try {
-        const user = await User.findOne({ username: uname });
-        if (user && await bcrypt.compare(upswd, user.password)) {
-            req.session.user = user;
-            res.json({ success: true, message: 'Login successful!', user: { _id: user._id, username: user.username } });
-        } else {
-            res.json({ success: false, message: 'Invalid username or password' });
-        }
-    } catch (err) {
-        res.status(500).json({ success: false, message: 'Server error' });
+        const { name, address, phone, altPhone, paymentMethod, numPages, numCopies, printType } = req.body;
+        if (!req.file) return res.status(400).json({ success: false, message: "PDF file is required!" });
+
+        let pricePerPage = printType === "double" ? 1 : 1.5;
+        const totalPrice = numPages * numCopies * pricePerPage;
+
+        const newOrder = new Order({
+            name, address, phone, altPhone, paymentMethod, printType,
+            numPages: parseInt(numPages), numCopies: parseInt(numCopies),
+            totalPrice, pdfPath: `/uploads/${req.file.filename}`
+        });
+
+        await newOrder.save();
+        res.json({
+            success: true,
+            message: "Order submitted successfully!",
+            orderDetails: {
+                name, address, phone, numPages, numCopies, totalPrice, printType, filePath: newOrder.pdfPath
+            }
+        });
+    } catch (error) {
+        console.error("❌ Error:", error);
+        res.status(500).json({ success: false, message: "Server error" });
     }
 });
 
-app.post('/register', async (req, res) => {
+// ===================== USER REGISTER & LOGIN ROUTES =====================
+app.post("/register", async (req, res) => {
     const { uname, upswd } = req.body;
+
+    if (!uname || !upswd) {
+        return res.status(400).json({ success: false, message: "Missing credentials" });
+    }
+
     try {
-        const existingUser = await User.findOne({ username: uname });
+        const existingUser = await User.findOne({ uname });
         if (existingUser) {
-            return res.json({ success: false, message: 'Username already exists' });
+            return res.status(400).json({ success: false, message: "User already exists" });
         }
-        const hashedPassword = await bcrypt.hash(upswd, 10);
-        const newUser = new User({ username: uname, password: hashedPassword });
+
+        const newUser = new User({ uname, upswd });
         await newUser.save();
-        res.json({ success: true, message: 'User registered successfully' });
-    } catch (err) {
-        res.status(500).json({ success: false, message: 'Error registering user' });
+        res.json({ success: true, message: "User registered successfully" });
+    } catch (error) {
+        console.error("❌ Error:", error);
+        res.status(500).json({ success: false, message: "Server error" });
     }
 });
 
-app.post('/logout', (req, res) => {
-    req.session.destroy(err => {
-        if (err) {
-            return res.status(500).json({ success: false, message: 'Logout failed' });
+app.post("/login", async (req, res) => {
+    const { uname, upswd } = req.body;
+
+    if (!uname || !upswd) {
+        return res.status(400).json({ success: false, message: "Missing credentials" });
+    }
+
+    try {
+        const user = await User.findOne({ uname });
+        if (!user || user.upswd !== upswd) {
+            return res.status(401).json({ success: false, message: "Invalid credentials" });
         }
-        res.json({ success: true, message: 'Logged out successfully' });
-    });
+
+        const token = jwt.sign({ uname: user.uname }, JWT_SECRET, { expiresIn: "1h" });
+        res.json({ success: true, token });
+    } catch (error) {
+        console.error("❌ Error:", error);
+        res.status(500).json({ success: false, message: "Server error" });
+    }
 });
 
-app.get('/admin/orders', async (req, res) => {
+// ===================== ADMIN ROUTES =====================
+
+const ADMIN_USERNAME = "sachin";
+const ADMIN_PASSWORD = "sachin123";
+const ADMIN_SECRET = "admin_secret_key";
+
+app.post("/admin/login", (req, res) => {
+    const { username, password } = req.body;
+    if (!username || !password) {
+        return res.status(400).json({ success: false, message: "Missing credentials" });
+    }
+    if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
+        const token = jwt.sign({ role: "admin" }, ADMIN_SECRET, { expiresIn: "1h" });
+        return res.json({ success: true, token });
+    } else {
+        return res.status(401).json({ success: false, message: "Invalid credentials" });
+    }
+});
+
+const verifyAdmin = (req, res, next) => {
+    const token = req.headers.authorization?.split(" ")[1];
+    if (!token) return res.status(403).json({ success: false, message: "Unauthorized" });
+
+    jwt.verify(token, ADMIN_SECRET, (err, decoded) => {
+        if (err) return res.status(403).json({ success: false, message: "Invalid token" });
+        next();
+    });
+};
+
+app.get("/admin/orders", verifyAdmin, async (req, res) => {
     try {
         const orders = await Order.find();
-        res.json(orders);
+        res.json({ success: true, orders });
     } catch (error) {
-        res.status(500).json({ message: 'Server error', error: error.message });
+        res.status(500).json({ success: false, message: "Failed to fetch orders" });
     }
 });
 
-app.delete('/admin/orders/:id', async (req, res) => {
+app.delete("/admin/orders/:id", verifyAdmin, async (req, res) => {
     try {
-        const order = await Order.findById(req.params.id);
-        if (!order) {
-            return res.status(404).json({ success: false, message: 'Order not found' });
-        }
-        fs.unlink(order.filePath, (err) => {
-            if (err) console.error('Error deleting file:', err);
-        });
         await Order.findByIdAndDelete(req.params.id);
-        res.json({ success: true, message: 'Order deleted successfully' });
+        res.json({ success: true, message: "Order deleted successfully" });
     } catch (error) {
-        res.status(500).json({ success: false, message: 'Server error', error: error.message });
+        res.status(500).json({ success: false, message: "Failed to delete order" });
     }
 });
 
-app.use(express.static(__dirname + '/public'));
-app.use('/uploads', express.static('uploads'));
-
-app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-});
+// ===================== SERVER START =====================
+const PORT = 3000;
+app.listen(PORT, () => console.log(`🚀 Server running at http://localhost:${PORT}`));

@@ -1,0 +1,1 @@
+mongoose.connect('mongodb+srv://dhanushua11:damUvSoBAPYPgeuW@cluster0.3ynp0.mongodb.net/userDB?retryWrites=true&w=majority')

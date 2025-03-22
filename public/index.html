@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Login Form</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="box">
+        <h1>Login Here</h1>
+        <form id="loginForm">
+            <p>Username</p>
+            <input type="text" name="uname" id="uname" placeholder="Enter Username" required>
+            <p>Password</p>
+            <input type="password" name="upswd" id="upswd" placeholder="Enter Password" required>
+            <input type="submit" value="Login">
+            <br><br>
+            <a href="register.html">Register for new account?</a>
+        </form>
+    </div>
+    
+    <script>
+        document.getElementById("loginForm").addEventListener("submit", async function(event) {
+            event.preventDefault();
+            
+            const uname = document.getElementById("uname").value;
+            const upswd = document.getElementById("upswd").value;
+
+            const response = await fetch("http://localhost:3000/login", { // Send request to Node.js backend
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ uname, upswd })
+            });
+
+            const result = await response.json();
+            alert(result.message);
+
+            if (result.success) {
+                window.location.href = "home.html"; // Redirect after login
+            }
+        });
+    </script>
+</body>
+</html>
