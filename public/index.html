@@ -25,7 +25,7 @@
             const uname = document.getElementById("uname").value;
             const upswd = document.getElementById("upswd").value;
 
-            const response = await fetch("http://localhost:3000/login", { // Send request to Node.js backend
+            const response = await fetch("https://xtaken.onrender.com/login", { // Send request to Node.js backend
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ uname, upswd })

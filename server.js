@@ -6,6 +6,8 @@ const multer = require("multer");
 const cors = require("cors");
 const path = require("path");
 const fs = require("fs");
+const cloudinary = require("cloudinary").v2;
+const streamifier = require("streamifier");
 
 const app = express();
 app.use(express.json());
@@ -17,6 +19,13 @@ const MONGO_URI = "mongodb+srv://dhanushua11:damUvSoBAPYPgeuW@cluster0.3ynp0.mon
 mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
     .then(() => console.log("✅ MongoDB Connected"))
     .catch(err => console.error("❌ MongoDB Connection Error:", err));
+
+// Cloudinary Configuration
+cloudinary.config({
+    cloud_name: "dbx6b3wwl",
+    api_key: "584611393161385",
+    api_secret: "te_ZPfkOobATrb6LIWNj3j4pObY"
+});
 
 // User Schema & Model
 const userSchema = new mongoose.Schema({
@@ -38,36 +47,16 @@ const orderSchema = new mongoose.Schema({
     numCopies: Number,
     printType: String,
     totalPrice: Number,
-    pdfPath: String,
+    pdfUrl: String,  // Changed from pdfPath to pdfUrl for Cloudinary
     createdAt: { type: Date, default: Date.now }
 });
 const Order = mongoose.model("Order", orderSchema);
 
-// Configure Multer for PDF Uploads
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        const uploadDir = path.join(__dirname, "public/uploads/");
-        if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-        cb(null, uploadDir);
-    },
-    filename: (req, file, cb) => {
-        const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-        cb(null, uniqueSuffix + path.extname(file.originalname));
-    }
-});
+// Configure Multer for Memory Storage (for Cloudinary Upload)
+const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
-// Serve dynamic HTML pages based on print type
-app.get("/order", (req, res) => {
-    const printType = req.query.printType;
-    if (printType === "double") {
-        res.sendFile(path.join(__dirname, "public/doubleside2pages.html"));
-    } else {
-        res.sendFile(path.join(__dirname, "public/singlerupees1.5.html"));
-    }
-});
-
-// Upload Order
+// Upload Order with Cloudinary
 app.post("/upload", upload.single("pdfFile"), async (req, res) => {
     try {
         const { name, address, phone, altPhone, paymentMethod, numPages, numCopies, printType } = req.body;
@@ -76,20 +65,34 @@ app.post("/upload", upload.single("pdfFile"), async (req, res) => {
         let pricePerPage = printType === "double" ? 1 : 1.5;
         const totalPrice = numPages * numCopies * pricePerPage;
 
-        const newOrder = new Order({
-            name, address, phone, altPhone, paymentMethod, printType,
-            numPages: parseInt(numPages), numCopies: parseInt(numCopies),
-            totalPrice, pdfPath: `/uploads/${req.file.filename}`
-        });
+        // Upload PDF to Cloudinary
+        const uploadStream = cloudinary.uploader.upload_stream(
+            { resource_type: "raw", folder: "pdf_uploads" }, 
+            async (error, result) => {
+                if (error) {
+                    console.error("❌ Cloudinary Upload Error:", error);
+                    return res.status(500).json({ success: false, message: "Cloudinary upload failed!" });
+                }
 
-        await newOrder.save();
-        res.json({
-            success: true,
-            message: "Order submitted successfully!",
-            orderDetails: {
-                name, address, phone, numPages, numCopies, totalPrice, printType, filePath: newOrder.pdfPath
+                const newOrder = new Order({
+                    name, address, phone, altPhone, paymentMethod, printType,
+                    numPages: parseInt(numPages), numCopies: parseInt(numCopies),
+                    totalPrice, pdfUrl: result.secure_url  // Store Cloudinary URL
+                });
+
+                await newOrder.save();
+                res.json({
+                    success: true,
+                    message: "Order submitted successfully!",
+                    orderDetails: {
+                        name, address, phone, numPages, numCopies, totalPrice, printType, fileUrl: newOrder.pdfUrl
+                    }
+                });
             }
-        });
+        );
+
+        streamifier.createReadStream(req.file.buffer).pipe(uploadStream);
+
     } catch (error) {
         console.error("❌ Error:", error);
         res.status(500).json({ success: false, message: "Server error" });

@@ -49,6 +49,9 @@
                 const ordersTable = document.getElementById("ordersTable");
                 ordersTable.innerHTML = "";
                 data.orders.forEach(order => {
+                    // Assuming `order.pdfPath` contains the Cloudinary URL
+                    let cloudinaryUrl = order.pdfPath;  // This should be the Cloudinary URL
+
                     ordersTable.innerHTML += `
                         <tr>
                             <td>${order.name}</td>
@@ -57,7 +60,7 @@
                             <td>${order.printType}</td>
                             <td>${order.numCopies}</td>
                             <td>₹${order.totalPrice}</td>
-                            <td><a href="${order.pdfPath}" target="_blank">View</a></td>
+                            <td><a href="${cloudinaryUrl}" target="_blank">View PDF</a></td>  <!-- Cloudinary URL link -->
                             <td><button class="btn btn-danger" onclick="deleteOrder('${order._id}')">Delete</button></td>
                         </tr>
                     `;
@@ -72,7 +75,7 @@
             const token = localStorage.getItem("adminToken");
             if (!confirm("Are you sure you want to delete this order?")) return;
 
-            await fetch(`http://localhost:3000/admin/orders/${orderId}`, {
+            await fetch(`https://xtaken.onrender.com/admin/orders/${orderId}`, {
                 method: "DELETE",
                 headers: { "Authorization": "Bearer " + token }
             });
