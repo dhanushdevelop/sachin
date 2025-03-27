@@ -10,9 +10,21 @@ const cloudinary = require("cloudinary").v2;
 const streamifier = require("streamifier");
 
 const app = express();
+
+// Enhanced CORS configuration
+const corsOptions = {
+  origin: ['https://xtakens.vercel.app', 'http://localhost:3000'],
+  methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions)); // Enable pre-flight for all routes
+
 app.use(express.json());
-app.use(cors());
 app.use(express.static("public")); // Serve frontend
+
 
 // MongoDB Connection
 const MONGO_URI = "mongodb+srv://dhanushua11:damUvSoBAPYPgeuW@cluster0.3ynp0.mongodb.net/userDB?retryWrites=true&w=majority";
